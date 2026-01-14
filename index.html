@@ -1,4 +1,4 @@
-<!-- 版本：外幣顯示完美修復版 (Foreign Currency UI/UX Perfect Fix) - 複製清單外幣優先顯示 - 含提示詞版 -->
+<!-- 版本：外幣顯示完美修復版 (Foreign Currency UI/UX Perfect Fix) - 複製清單外幣優先顯示 - 手機輸入框修復版 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -331,12 +331,12 @@
                         </div>
 
                         {/* 1. 同行夥伴 */}
-                        <section className="bg-white rounded-2xl border border-[#e5e1d8] p-6 shadow-sm flex flex-col">
+                        <section className="bg-white rounded-2xl border border-[#e5e1d8] p-4 sm:p-6 shadow-sm flex flex-col">
                             <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-[#8d775f]">
                                 <Icon name="users" /> 同行夥伴
                             </h2>
                             <div className="flex gap-2 mb-6">
-                                <input type="text" value={newMemberName} onChange={e => setNewMemberName(e.target.value)} onKeyPress={e => e.key === 'Enter' && addMember()} placeholder="輸入夥伴姓名..." className="flex-1 px-4 py-3 bg-[#fdfaf5] border border-[#e5e1d8] rounded-xl outline-none text-base" />
+                                <input type="text" value={newMemberName} onChange={e => setNewMemberName(e.target.value)} onKeyPress={e => e.key === 'Enter' && addMember()} placeholder="輸入夥伴姓名..." className="flex-1 min-w-0 px-4 py-3 bg-[#fdfaf5] border border-[#e5e1d8] rounded-xl outline-none text-base" />
                                 <button onClick={addMember} className="bg-[#5c6b53] text-white px-5 rounded-xl shadow-md active:scale-95 transition-transform"><Icon name="user-plus" /></button>
                             </div>
                             <div className="flex flex-wrap gap-2.5">
@@ -527,7 +527,7 @@
                                                          {settlement.primaryCode && settlement.primaryCode !== 'TWD' 
                                                             ? CURRENCIES.find(c => c.code === settlement.primaryCode)?.symbol 
                                                             : 'TWD'}
-                                                    </span>
+                                                    </span> 
                                                     {formatNum(settlement.primaryCode && settlement.primaryCode !== 'TWD' 
                                                         ? t.amount / settlement.primaryRate 
                                                         : t.amount)}
