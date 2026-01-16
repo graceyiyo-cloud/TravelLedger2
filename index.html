@@ -1,4 +1,4 @@
-<!-- 版本：外幣顯示完美修復版 (Foreign Currency UI/UX Perfect Fix) - 複製清單外幣優先顯示 - 手機輸入框修復版 -->
+<!-- 版本：顯示當時匯率版 (Show Saved Exchange Rate) - 含單筆刪除確認 -->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -54,6 +54,15 @@
             background: #e5e1d8;
             border-radius: 10px;
         }
+        
+        /* Modal Animation */
+        @keyframes scaleUp {
+            from { transform: scale(0.95); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .scale-up-center {
+            animation: scaleUp 0.2s ease-out forwards;
+        }
     </style>
 </head>
 <body>
@@ -66,7 +75,7 @@
             return <i data-lucide={name} className={className}></i>;
         };
 
-        const APP_ID = 'travel-expense-splitter-v1';
+        const APP_ID = 'travel-expense-splitter-v1'; // 保持此 ID 不變，資料就不會消失
         const CURRENCIES = [
             { code: 'TWD', name: '台幣', symbol: 'TWD' },
             { code: 'USD', name: '美金', symbol: 'USD' },
@@ -87,7 +96,11 @@
             const [expenses, setExpenses] = useState([]);
             const [rates, setRates] = useState({ TWD: 1 });
             const [loadingRates, setLoadingRates] = useState(false);
+            
+            // 狀態管理：確認視窗
             const [showClearConfirm, setShowClearConfirm] = useState(false);
+            const [expenseToDelete, setExpenseToDelete] = useState(null);
+            
             const [toast, setToast] = useState(null);
             const [form, setForm] = useState({ item: '', amount: '', currency: 'TWD', payer: '', participants: [] });
 
@@ -104,7 +117,7 @@
             useEffect(() => {
                 localStorage.setItem(APP_ID, JSON.stringify({ members, expenses }));
                 if (window.lucide) window.lucide.createIcons();
-            }, [members, expenses, rates]);
+            }, [members, expenses, rates, showClearConfirm, expenseToDelete]); // 監聽狀態更新圖標
 
             const showToast = (msg) => {
                 setToast(msg);
@@ -176,13 +189,20 @@
                 showToast("支出已記錄");
             };
 
+            const confirmDeleteExpense = () => {
+                if (expenseToDelete !== null) {
+                    setExpenses(expenses.filter(e => e.id !== expenseToDelete));
+                    setExpenseToDelete(null);
+                    showToast("已刪除該筆明細");
+                }
+            };
+
             // 修正結算邏輯：全部轉 TWD 計算，並偵測主要外幣
             const settlement = useMemo(() => {
-                const balances = {}; // 紀錄每個人的 TWD 餘額 (正=應收, 負=應付)
+                const balances = {}; 
                 let totalTWD = 0;
                 members.forEach(m => balances[m] = 0);
 
-                // 統計出現最多次的外幣
                 const currencyCounts = {};
                 expenses.forEach(e => {
                     if (e.currency !== 'TWD') {
@@ -190,25 +210,20 @@
                     }
                 });
                 const primaryCode = Object.keys(currencyCounts).reduce((a, b) => currencyCounts[a] > currencyCounts[b] ? a : b, null);
-                // 取得該外幣的參考匯率 (使用最新匯率表中的匯率，若無則用1)
                 const primaryRate = primaryCode ? (rates[primaryCode] || 1) : 1;
 
                 expenses.forEach(exp => {
                     const amountTWD = exp.amount * exp.rate;
                     totalTWD += amountTWD;
                     
-                    // 付款人 + TWD金額
                     balances[exp.payer] = (balances[exp.payer] || 0) + amountTWD;
                     
-                    // 分攤人 - TWD金額
                     Object.entries(exp.splits).forEach(([name, splitAmt]) => { 
-                        // splitAmt 是外幣，需轉 TWD
                         balances[name] = (balances[name] || 0) - (splitAmt * exp.rate); 
                     });
                 });
 
                 const debtors = [], creditors = [];
-                // 設定 1 TWD 的容錯區間避免浮點數誤差
                 Object.entries(balances).forEach(([name, bal]) => {
                     if (bal < -1) debtors.push({ name, amount: Math.abs(bal) });
                     else if (bal > 1) creditors.push({ name, amount: bal });
@@ -216,7 +231,6 @@
 
                 const transactions = [];
                 let dIdx = 0, cIdx = 0;
-                // 深拷貝以免修改到原始陣列
                 const td = JSON.parse(JSON.stringify(debtors)), tc = JSON.parse(JSON.stringify(creditors));
                 
                 while (dIdx < td.length && cIdx < tc.length) {
@@ -236,24 +250,18 @@
             const copyToClipboard = () => {
                 let text = `【費用結算清單】\n`;
                 
-                // 新增：代墊明細總覽
                 let hasPrepaid = false;
                 members.forEach(m => {
-                    // 找出該成員代墊的所有項目
                     const paidItems = expenses.filter(e => e.payer === m);
                     if (paidItems.length > 0) {
                         hasPrepaid = true;
                         text += `\n${m} 預付：`;
-                        
-                        // 組合項目字串：項目1 $100 + 項目2 $200
                         const itemsStr = paidItems.map(e => {
                             const sym = CURRENCIES.find(c => c.code === e.currency).symbol;
                             return `${e.item} ${sym}${formatNum(e.amount)}`;
                         }).join(' + ');
                         
-                        // 計算該成員總預付金額 (換算回台幣以方便加總)
                         const totalPrepaidTWD = paidItems.reduce((sum, e) => sum + (e.amount * e.rate), 0);
-                        
                         text += `${itemsStr} = 總共預付 `;
 
                         if (settlement.primaryCode && settlement.primaryCode !== 'TWD') {
@@ -266,7 +274,7 @@
                     }
                 });
                 
-                if (hasPrepaid) text += `\n`; // 如果有內容，多加一個換行讓版面好看
+                if (hasPrepaid) text += `\n`;
 
                 text += `━━━━━━━━━━━━━━━\n\n`;
 
@@ -287,7 +295,6 @@
                 if (settlement.transactions.length === 0) text += `目前的帳目已結清。\n`;
                 else {
                     settlement.transactions.forEach(t => {
-                        // t.amount 已經是 TWD
                         text += `◆ ${t.from} → ${t.to}：`;
                         if (settlement.primaryCode && settlement.primaryCode !== 'TWD') {
                             const foreignAmt = Math.round(t.amount / settlement.primaryRate);
@@ -320,13 +327,13 @@
                     </header>
 
                     <main className="max-w-xl mx-auto p-4 space-y-10">
-                        {/* 使用提示 (新增) */}
+                        {/* 使用提示 */}
                         <div className="bg-[#fdfaf5] border border-[#e5e1d8] p-5 rounded-2xl shadow-sm flex items-start gap-4">
                             <div className="bg-[#5c6b53]/10 p-2 rounded-full text-[#5c6b53] mt-0.5 shrink-0">
                                 <Icon name="info" className="w-5 h-5" />
                             </div>
                             <p className="text-sm text-[#7a746a] leading-relaxed">
-                                用手機或是電腦開此網頁，紀錄會暫存紀錄在你使用的工具裡，網頁關起來重新打開已記錄的資料不會消失，下方支出明細旁邊有一顆全部清除按鈕，可供清除此次全部資料。
+                                用手機或是電腦開此網頁，紀錄會暫存紀錄在你使用的工具裡，網頁關起來重新打開已記錄的資料不會消失。若需刪除特定項目，點擊垃圾桶後會再次確認。
                             </p>
                         </div>
 
@@ -399,11 +406,10 @@
                             <button onClick={submitExpense} disabled={!form.item || !form.amount || !form.payer || form.participants.length === 0} className="w-full bg-[#5c6b53] text-white py-4 rounded-2xl text-lg shadow-lg tracking-[0.4em] font-black disabled:opacity-30 active:scale-[0.98] transition-all">記錄這筆支出</button>
                         </section>
 
-                        {/* 累計看板 (更新：顯示外幣與台幣) */}
+                        {/* 累計看板 */}
                         <section className="bg-[#5c6b53] rounded-3xl p-8 border border-[#e5e1d8] flex flex-col justify-center items-center text-center gap-2 relative shadow-xl text-white">
                             <h3 className="text-xs text-white/60 font-black tracking-[0.3em] uppercase mb-2">Total Trip Expenditure</h3>
                             
-                            {/* 主要金額 (若有外幣優先顯示外幣，否則顯示台幣) */}
                             <div className="text-5xl font-black flex items-center justify-center gap-3">
                                 <span className="text-base opacity-50 tracking-normal">
                                     {settlement.primaryCode && settlement.primaryCode !== 'TWD' 
@@ -415,7 +421,6 @@
                                     : settlement.totalTWD)}
                             </div>
                             
-                            {/* 次要金額 (若上方顯示外幣，下方顯示台幣參考) */}
                             {settlement.primaryCode && settlement.primaryCode !== 'TWD' && (
                                 <div className="text-white/80 text-lg font-bold bg-white/10 px-4 py-1.5 rounded-xl mt-2 border border-white/20">
                                     ≈ TWD {formatNum(settlement.totalTWD)}
@@ -427,7 +432,7 @@
                             </div>
                         </section>
 
-                        {/* 3. 支出明細 (更新：手機版 UI 強制換行顯示外幣與台幣) */}
+                        {/* 3. 支出明細 */}
                         <section className="space-y-6">
                             <div className="flex justify-between items-center px-2">
                                 <h2 className="text-lg font-bold flex items-center gap-2 text-[#5c6b53]"><Icon name="scroll-text" /> 支出明細</h2>
@@ -439,7 +444,6 @@
                                 {expenses.length === 0 ? (
                                     <div className="py-12 text-center text-[#a8a297] opacity-60">目前尚無紀錄</div>
                                 ) : expenses.map((exp, idx) => {
-                                    // 修正：直接使用 expenses.map 依照原始順序 (最早的在最上面)
                                     return (
                                         <div key={exp.id} className="relative pl-8 border-l-4 border-[#5c6b53]/20 pb-4">
                                             <div className="absolute left-[-10px] top-1.5 bg-[#5c6b53] rounded-full w-4 h-4 border-4 border-white shadow-sm" />
@@ -448,8 +452,12 @@
                                                     <div className="flex items-center gap-3 flex-wrap">
                                                         <span className="text-xl font-black text-[#4a4a4a]">{idx + 1}. {exp.item}</span>
                                                         <span className="text-[10px] text-[#a8a297] tracking-widest bg-[#fdfaf5] px-2 py-0.5 rounded border border-[#e5e1d8]">{exp.timestamp}</span>
+                                                        {exp.currency !== 'TWD' && (
+                                                            <span className="text-[10px] text-[#5c6b53] font-mono tracking-widest bg-[#fdfaf5] px-2 py-0.5 rounded border border-[#e5e1d8]">
+                                                                匯率: {exp.rate}
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    {/* 支出者區塊 - 手機版優化 */}
                                                     <div className="text-base text-[#7a746a] mt-3 font-bold leading-relaxed">
                                                         <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
                                                             <span><span className="text-[#5c6b53] font-black">{exp.payer}</span> 預付了</span>
@@ -464,10 +472,9 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <button onClick={() => setExpenses(expenses.filter(e => e.id !== exp.id))} className="text-[#e5e1d8] hover:text-red-500 transition-colors p-1"><Icon name="trash" className="w-5 h-5" /></button>
+                                                <button onClick={() => setExpenseToDelete(exp.id)} className="text-[#e5e1d8] hover:text-red-500 transition-colors p-1"><Icon name="trash" className="w-5 h-5" /></button>
                                             </div>
                                             
-                                            {/* 分攤區塊 - 手機版優化：外幣與台幣明確換行 */}
                                             <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 sm:gap-4 mt-6">
                                                 {Object.entries(exp.splits).map(([name, amt]) => (
                                                     <div key={name} className="bg-[#fdfaf5] p-3 sm:p-4 rounded-2xl border border-[#e5e1d8]/60 text-sm shadow-sm hover:border-[#5c6b53]/30 transition-colors flex flex-col justify-between">
@@ -491,7 +498,7 @@
                             </div>
                         </section>
 
-                        {/* 4. 結算統計 (更新：同時顯示 TWD 與 主要外幣) */}
+                        {/* 4. 結算統計 */}
                         <section className="space-y-6">
                             <div className="flex justify-between items-center px-2">
                                 <h2 className="text-lg font-bold flex items-center gap-2 text-[#5c6b53]"><Icon name="check-circle-2" /> 最終結算結餘</h2>
@@ -505,7 +512,6 @@
                                 <div className="p-4 sm:p-6 space-y-6">
                                     {settlement.transactions.map((t, i) => (
                                         <div key={i} className="flex flex-col sm:flex-row items-center justify-between p-4 sm:p-6 bg-[#fdfaf5] rounded-[2rem] border border-[#e5e1d8]/50 gap-4 sm:gap-6">
-                                            {/* Transaction Flow: From -> To */}
                                             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-5 w-full sm:w-auto">
                                                 <div className="flex flex-col items-center w-full sm:w-auto">
                                                     <span className="text-xs text-[#a8a297] uppercase mb-1 sm:mb-2 font-black tracking-widest">應付者</span>
@@ -520,7 +526,6 @@
                                                 </div>
                                             </div>
 
-                                            {/* Amount Display (Updated: Show Foreign primary, TWD secondary) */}
                                             <div className="text-center sm:text-right w-full sm:w-auto border-t sm:border-t-0 border-[#e5e1d8]/50 pt-3 sm:pt-0 mt-2 sm:mt-0 flex flex-col justify-center sm:items-end">
                                                 <div className="text-2xl font-black text-[#5c6b53] whitespace-nowrap">
                                                     <span className="text-sm font-bold opacity-60 mr-1">
@@ -556,7 +561,21 @@
                         </div>
                     )}
 
-                    {/* 清除確認 */}
+                    {/* 單筆刪除確認視窗 */}
+                    {expenseToDelete !== null && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+                            <div className="bg-white rounded-[3rem] p-12 max-w-sm w-full shadow-2xl border border-[#e5e1d8] text-center scale-up-center">
+                                <h3 className="text-2xl font-black text-[#5c6b53] mb-6">刪除此筆項目？</h3>
+                                <p className="text-[#7a746a] text-base mb-12 leading-relaxed font-black">確定要移除這筆支出紀錄嗎？<br/>此操作無法還原。</p>
+                                <div className="flex flex-col gap-4">
+                                    <button onClick={confirmDeleteExpense} className="w-full py-5 bg-[#5c6b53] text-white text-base font-black rounded-2xl tracking-[0.4em] uppercase shadow-lg active:scale-95 transition-all">確認刪除</button>
+                                    <button onClick={() => setExpenseToDelete(null)} className="w-full py-4 text-[#a8a297] text-sm font-black uppercase hover:text-[#4a4a4a]">取消</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 全部清除確認視窗 */}
                     {showClearConfirm && (
                         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-6">
                             <div className="bg-white rounded-[3rem] p-12 max-w-sm w-full shadow-2xl border border-[#e5e1d8] text-center scale-up-center">
