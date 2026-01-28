@@ -183,17 +183,11 @@
             };
 
             const toggleParticipant = (name, isEdit = false) => {
-                if (isEdit) {
-                    setEditForm(prev => {
-                        const isIncluded = prev.participants.includes(name);
-                        return { ...prev, participants: isIncluded ? prev.participants.filter(p => p !== name) : [...prev.participants, name] };
-                    });
-                } else {
-                    setForm(prev => {
-                        const isIncluded = prev.participants.includes(name);
-                        return { ...prev, participants: isIncluded ? prev.participants.filter(p => p !== name) : [...prev.participants, name] };
-                    });
-                }
+                const setFunc = isEdit ? setEditForm : setForm;
+                setFunc(prev => {
+                    const isIncluded = prev.participants.includes(name);
+                    return { ...prev, participants: isIncluded ? prev.participants.filter(p => p !== name) : [...prev.participants, name] };
+                });
             };
 
             const formatNum = (num) => new Intl.NumberFormat('en-US').format(Math.round(num));
@@ -246,14 +240,6 @@
                 setEditingId(null);
                 setEditForm(null);
                 showToast("已更新明細");
-            };
-
-            const confirmDeleteExpense = () => {
-                if (expenseToDelete !== null) {
-                    setExpenses(expenses.filter(e => e.id !== expenseToDelete));
-                    setExpenseToDelete(null);
-                    showToast("已刪除該筆明細");
-                }
             };
 
             const settlement = useMemo(() => {
@@ -515,27 +501,28 @@
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <>
-                                                    <div className="flex justify-between items-start gap-2 mb-3">
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                <span className="text-lg font-black text-[#4a4a4a]">{idx + 1}. {exp.item}</span>
-                                                                <span className="text-[10px] text-[#a8a297] tracking-widest bg-[#fdfaf5] px-1.5 py-0.5 rounded border border-[#e5e1d8]">{exp.timestamp}</span>
-                                                                {exp.currency !== 'TWD' && (
-                                                                    <span className="text-[10px] text-[#5c6b53] font-mono tracking-widest bg-[#fdfaf5] px-1.5 py-0.5 rounded border border-[#e5e1d8]">
-                                                                        匯率: {exp.rate}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <div className="text-sm text-[#7a746a] mt-1 font-bold leading-tight">
-                                                                <span className="text-[#5c6b53] font-black">{exp.payer}</span> 預付 <span className="text-[#5c6b53] font-black">{CURRENCIES.find(c => c.code === exp.currency).symbol} {formatNum(exp.amount)}</span>
-                                                                {exp.currency !== 'TWD' && <span className="text-xs opacity-70 ml-1">(≈ TWD {formatNum(exp.amount * exp.rate)})</span>}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex gap-1 shrink-0">
+                                                <div className="flex flex-col w-full">
+                                                    <div className="flex justify-between items-start w-full gap-2">
+                                                        <div className="text-lg font-black text-[#4a4a4a]">{idx + 1}. {exp.item}</div>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            {exp.currency !== 'TWD' && (
+                                                                <span className="text-[10px] text-[#5c6b53] font-mono tracking-widest mr-2 opacity-60">
+                                                                    匯率: {exp.rate}
+                                                                </span>
+                                                            )}
                                                             <button onClick={() => startEditing(exp)} className="text-[#a8a297] hover:text-[#5c6b53] transition-colors p-1"><Icon name="pencil" className="w-4 h-4" /></button>
                                                             <button onClick={() => setExpenseToDelete(exp.id)} className="text-[#e5e1d8] hover:text-red-500 transition-colors p-1"><Icon name="trash" className="w-4 h-4" /></button>
                                                         </div>
+                                                    </div>
+                                                    <div className="text-[10px] text-[#a8a297] tracking-widest mt-0.5 w-full block whitespace-nowrap overflow-hidden">
+                                                        {exp.timestamp}
+                                                    </div>
+                                                    <div className="text-sm text-[#7a746a] mt-1 font-bold w-full block">
+                                                        <span className="text-[#5c6b53] font-black">{exp.payer}</span> 預付 
+                                                        <span className="text-[#5c6b53] font-black ml-1">
+                                                            {CURRENCIES.find(c => c.code === exp.currency).symbol} {formatNum(exp.amount)}
+                                                            {exp.currency !== 'TWD' && ` (≈ TWD ${formatNum(exp.amount * exp.rate)})`}
+                                                        </span>
                                                     </div>
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mt-3">
                                                         {Object.entries(exp.splits).map(([name, amt]) => (
@@ -554,7 +541,7 @@
                                                             </div>
                                                         ))}
                                                     </div>
-                                                </>
+                                                </div>
                                             )}
                                         </div>
                                     );
